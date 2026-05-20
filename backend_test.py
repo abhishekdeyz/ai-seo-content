@@ -679,39 +679,702 @@ def test_get_job_not_found():
 # Global variables for storing IDs
 ARTICLE_ID = None
 JOB_ID = None
+PROJECT_ID = None
+BULK_JOB_ID = None
+
+# ============= v2 TESTS =============
+
+# Test 25: POST /api/projects - Create project
+def test_create_project():
+    print_test("POST /api/projects - Create project")
+    try:
+        resp = session.post(f"{API_BASE}/projects", json={
+            "name": "Client X",
+            "websiteUrl": "https://x.com",
+            "description": "test project"
+        })
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "id" in data and "userId" in data and data.get("name") == "Client X":
+                print_result(True, "Project created successfully with id, userId, name")
+                global PROJECT_ID
+                PROJECT_ID = data["id"]
+                return True
+            else:
+                print_result(False, "Missing required fields in response")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 26: POST /api/projects - Missing name should return 400
+def test_create_project_no_name():
+    print_test("POST /api/projects - Missing name should return 400")
+    try:
+        resp = session.post(f"{API_BASE}/projects", json={
+            "websiteUrl": "https://example.com",
+            "description": "test"
+        })
+        print_response(resp)
+        
+        if resp.status_code == 400:
+            print_result(True, "Missing name correctly returns 400")
+            return True
+        else:
+            print_result(False, f"Expected 400, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 27: GET /api/projects - List projects with articleCount
+def test_list_projects():
+    print_test("GET /api/projects - List projects with articleCount")
+    try:
+        resp = session.get(f"{API_BASE}/projects")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list):
+                # Check if each project has articleCount field
+                if len(data) > 0:
+                    if "articleCount" in data[0]:
+                        print_result(True, "Returns projects list with articleCount field")
+                        return True
+                    else:
+                        print_result(False, "Missing articleCount field")
+                        return False
+                else:
+                    print_result(True, "Returns empty projects list (valid)")
+                    return True
+            else:
+                print_result(False, "Response is not a list")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 28: GET /api/projects/:id - Get single project
+def test_get_project():
+    print_test("GET /api/projects/:id - Get single project")
+    try:
+        if not PROJECT_ID:
+            print_result(False, "No project ID available from previous test")
+            return False
+        
+        resp = session.get(f"{API_BASE}/projects/{PROJECT_ID}")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "id" in data and data["id"] == PROJECT_ID:
+                if "_id" in data:
+                    print_result(False, "MongoDB _id field is exposed")
+                    return False
+                print_result(True, "Returns project without _id field")
+                return True
+            else:
+                print_result(False, "Project ID mismatch or missing")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 29: PUT /api/projects/:id - Update project
+def test_update_project():
+    print_test("PUT /api/projects/:id - Update project")
+    try:
+        if not PROJECT_ID:
+            print_result(False, "No project ID available from previous test")
+            return False
+        
+        resp = session.put(f"{API_BASE}/projects/{PROJECT_ID}", json={
+            "name": "Updated Client X"
+        })
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("ok") == True:
+                print_result(True, "Project updated successfully")
+                return True
+            else:
+                print_result(False, "Update response missing ok:true")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 30: POST /api/generate with projectId
+def test_generate_with_project():
+    print_test("POST /api/generate - With projectId")
+    try:
+        if not PROJECT_ID:
+            print_result(False, "No project ID available from previous test")
+            return False
+        
+        resp = session.post(f"{API_BASE}/generate", json={
+            "primaryKeyword": "test seo",
+            "projectId": PROJECT_ID
+        })
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "id" in data and data.get("status") == "queued":
+                # Verify article has projectId
+                article_id = data["id"]
+                time.sleep(0.5)  # Brief wait
+                article_resp = session.get(f"{API_BASE}/articles/{article_id}")
+                if article_resp.status_code == 200:
+                    article_data = article_resp.json()
+                    if article_data.get("projectId") == PROJECT_ID:
+                        print_result(True, "Article created with projectId")
+                        return True
+                    else:
+                        print_result(False, f"Article projectId mismatch: expected {PROJECT_ID}, got {article_data.get('projectId')}")
+                        return False
+                else:
+                    print_result(False, "Failed to verify article projectId")
+                    return False
+            else:
+                print_result(False, "Missing id or status != 'queued'")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 31: POST /api/bulk with projectId
+def test_bulk_with_project():
+    print_test("POST /api/bulk - With projectId")
+    try:
+        if not PROJECT_ID:
+            print_result(False, "No project ID available from previous test")
+            return False
+        
+        resp = session.post(f"{API_BASE}/bulk", json={
+            "name": "Batch with Project",
+            "rows": [
+                {"primary_keyword": "keyword a"},
+                {"primary_keyword": "keyword b"}
+            ],
+            "defaults": {"country": "us"},
+            "projectId": PROJECT_ID
+        })
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "id" in data and data.get("projectId") == PROJECT_ID:
+                print_result(True, "Bulk job created with projectId")
+                global BULK_JOB_ID
+                BULK_JOB_ID = data["id"]
+                return True
+            else:
+                print_result(False, f"Missing id or projectId mismatch")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 32: GET /api/articles?projectId=PROJECT_ID
+def test_articles_filter_by_project():
+    print_test("GET /api/articles?projectId=PROJECT_ID - Filter by project")
+    try:
+        if not PROJECT_ID:
+            print_result(False, "No project ID available from previous test")
+            return False
+        
+        resp = session.get(f"{API_BASE}/articles?projectId={PROJECT_ID}")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "items" in data:
+                # Verify all items have the correct projectId
+                items = data["items"]
+                if len(items) > 0:
+                    all_match = all(item.get("projectId") == PROJECT_ID for item in items)
+                    if all_match:
+                        print_result(True, f"All {len(items)} articles have correct projectId")
+                        return True
+                    else:
+                        print_result(False, "Some articles have wrong projectId")
+                        return False
+                else:
+                    print_result(True, "No articles yet (valid)")
+                    return True
+            else:
+                print_result(False, "Missing items field")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 33: GET /api/articles?projectId=none
+def test_articles_filter_no_project():
+    print_test("GET /api/articles?projectId=none - Filter articles with no project")
+    try:
+        resp = session.get(f"{API_BASE}/articles?projectId=none")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "items" in data:
+                items = data["items"]
+                # Verify all items have null or missing projectId
+                all_null = all(item.get("projectId") is None for item in items)
+                if all_null:
+                    print_result(True, f"All {len(items)} articles have null projectId")
+                    return True
+                else:
+                    print_result(False, "Some articles have non-null projectId")
+                    return False
+            else:
+                print_result(False, "Missing items field")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 34: GET /api/articles?groupBy=website
+def test_articles_group_by_website():
+    print_test("GET /api/articles?groupBy=website - Group by website")
+    try:
+        resp = session.get(f"{API_BASE}/articles?groupBy=website")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "items" in data and "groups" in data:
+                groups = data["groups"]
+                if isinstance(groups, dict):
+                    print_result(True, "Returns both items and groups object")
+                    return True
+                else:
+                    print_result(False, "groups is not an object")
+                    return False
+            else:
+                print_result(False, "Missing items or groups field")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 35: POST /api/jobs/:id/pause
+def test_job_pause():
+    print_test("POST /api/jobs/:id/pause - Pause job")
+    try:
+        if not BULK_JOB_ID:
+            print_result(False, "No bulk job ID available from previous test")
+            return False
+        
+        resp = session.post(f"{API_BASE}/jobs/{BULK_JOB_ID}/pause")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("ok") == True and data.get("paused") == True:
+                # Verify job is paused
+                time.sleep(0.5)
+                job_resp = session.get(f"{API_BASE}/jobs/{BULK_JOB_ID}")
+                if job_resp.status_code == 200:
+                    job_data = job_resp.json()
+                    if job_data.get("paused") == True:
+                        print_result(True, "Job paused successfully")
+                        return True
+                    else:
+                        print_result(False, "Job paused field not true")
+                        return False
+                else:
+                    print_result(False, "Failed to verify job pause")
+                    return False
+            else:
+                print_result(False, "Response missing ok:true or paused:true")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 36: POST /api/jobs/:id/resume
+def test_job_resume():
+    print_test("POST /api/jobs/:id/resume - Resume job")
+    try:
+        if not BULK_JOB_ID:
+            print_result(False, "No bulk job ID available from previous test")
+            return False
+        
+        resp = session.post(f"{API_BASE}/jobs/{BULK_JOB_ID}/resume")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("ok") == True and data.get("paused") == False:
+                # Verify job is resumed
+                time.sleep(0.5)
+                job_resp = session.get(f"{API_BASE}/jobs/{BULK_JOB_ID}")
+                if job_resp.status_code == 200:
+                    job_data = job_resp.json()
+                    if job_data.get("paused") == False:
+                        print_result(True, "Job resumed successfully")
+                        return True
+                    else:
+                        print_result(False, "Job paused field not false")
+                        return False
+                else:
+                    print_result(False, "Failed to verify job resume")
+                    return False
+            else:
+                print_result(False, "Response missing ok:true or paused:false")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 37: POST /api/jobs/:id/retry-failed
+def test_job_retry_failed():
+    print_test("POST /api/jobs/:id/retry-failed - Retry failed articles")
+    try:
+        if not BULK_JOB_ID:
+            print_result(False, "No bulk job ID available from previous test")
+            return False
+        
+        resp = session.post(f"{API_BASE}/jobs/{BULK_JOB_ID}/retry-failed")
+        print_response(resp)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("ok") == True and "retried" in data:
+                print_result(True, f"Retry-failed endpoint works, retried {data.get('retried')} articles")
+                return True
+            else:
+                print_result(False, "Response missing ok:true or retried field")
+                return False
+        else:
+            print_result(False, f"Expected 200, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 38: GET /api/jobs/:id/export - No completed articles
+def test_job_export_no_completed():
+    print_test("GET /api/jobs/:id/export - No completed articles should return 400")
+    try:
+        if not BULK_JOB_ID:
+            print_result(False, "No bulk job ID available from previous test")
+            return False
+        
+        resp = session.get(f"{API_BASE}/jobs/{BULK_JOB_ID}/export?format=html")
+        print_response(resp)
+        
+        if resp.status_code == 400:
+            data = resp.json()
+            if "error" in data and "No completed articles" in data["error"]:
+                print_result(True, "Correctly returns 400 with 'No completed articles' error")
+                return True
+            else:
+                print_result(False, "400 but error message doesn't mention 'No completed articles'")
+                return False
+        else:
+            print_result(False, f"Expected 400, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 39: GET /api/jobs/:id/export - Invalid job ID
+def test_job_export_not_found():
+    print_test("GET /api/jobs/:id/export - Invalid job ID should return 404")
+    try:
+        resp = session.get(f"{API_BASE}/jobs/invalid-job-id-12345/export?format=html")
+        print_response(resp)
+        
+        if resp.status_code == 404:
+            print_result(True, "Invalid job ID correctly returns 404")
+            return True
+        else:
+            print_result(False, f"Expected 404, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 40: POST /api/articles/:id/rewrite - Invalid target
+def test_article_rewrite_invalid_target():
+    print_test("POST /api/articles/:id/rewrite - Invalid target should return 400")
+    try:
+        # Create a test article first
+        gen_resp = session.post(f"{API_BASE}/generate", json={
+            "primaryKeyword": "test rewrite article"
+        })
+        if gen_resp.status_code != 200:
+            print_result(False, "Failed to create test article")
+            return False
+        
+        article_id = gen_resp.json()["id"]
+        time.sleep(0.5)
+        
+        resp = session.post(f"{API_BASE}/articles/{article_id}/rewrite", json={
+            "target": "invalid_target",
+            "operation": "regenerate"
+        })
+        print_response(resp)
+        
+        if resp.status_code == 400:
+            print_result(True, "Invalid target correctly returns 400")
+            return True
+        else:
+            print_result(False, f"Expected 400, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 41: POST /api/articles/:id/rewrite - Non-existent article
+def test_article_rewrite_not_found():
+    print_test("POST /api/articles/:id/rewrite - Non-existent article should return 404")
+    try:
+        resp = session.post(f"{API_BASE}/articles/invalid-article-id-12345/rewrite", json={
+            "target": "title",
+            "operation": "regenerate"
+        })
+        print_response(resp)
+        
+        if resp.status_code == 404:
+            print_result(True, "Non-existent article correctly returns 404")
+            return True
+        else:
+            print_result(False, f"Expected 404, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 42: POST /api/articles/:id/rewrite - OPENAI_API_KEY placeholder
+def test_article_rewrite_no_openai_key():
+    print_test("POST /api/articles/:id/rewrite - OPENAI_API_KEY placeholder should return 502")
+    try:
+        # Create a test article with some content
+        gen_resp = session.post(f"{API_BASE}/generate", json={
+            "primaryKeyword": "test openai rewrite"
+        })
+        if gen_resp.status_code != 200:
+            print_result(False, "Failed to create test article")
+            return False
+        
+        article_id = gen_resp.json()["id"]
+        time.sleep(0.5)
+        
+        # Update article to have a title (so we can rewrite it)
+        update_resp = session.put(f"{API_BASE}/articles/{article_id}", json={
+            "title": "Test Title for Rewrite"
+        })
+        if update_resp.status_code != 200:
+            print_result(False, "Failed to update article with title")
+            return False
+        
+        resp = session.post(f"{API_BASE}/articles/{article_id}/rewrite", json={
+            "target": "title",
+            "operation": "regenerate"
+        })
+        print_response(resp)
+        
+        if resp.status_code == 502:
+            data = resp.json()
+            if "error" in data and "OPENAI_API_KEY" in data["error"]:
+                print_result(True, "OPENAI_API_KEY placeholder detected, returns 502 with clear error")
+                return True
+            else:
+                print_result(False, "502 but error message doesn't mention OPENAI_API_KEY")
+                return False
+        else:
+            print_result(False, f"Expected 502, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 43: POST /api/articles/:id/rewrite - No content to rewrite
+def test_article_rewrite_no_content():
+    print_test("POST /api/articles/:id/rewrite - No content should return 400")
+    try:
+        # Create a test article (queued, no content yet)
+        gen_resp = session.post(f"{API_BASE}/generate", json={
+            "primaryKeyword": "test no content rewrite"
+        })
+        if gen_resp.status_code != 200:
+            print_result(False, "Failed to create test article")
+            return False
+        
+        article_id = gen_resp.json()["id"]
+        time.sleep(0.5)
+        
+        # Try to rewrite a section that doesn't exist
+        resp = session.post(f"{API_BASE}/articles/{article_id}/rewrite", json={
+            "target": "section",
+            "sectionIndex": 0,
+            "operation": "readability"
+        })
+        print_response(resp)
+        
+        if resp.status_code == 400:
+            data = resp.json()
+            if "error" in data:
+                print_result(True, "No content correctly returns 400")
+                return True
+            else:
+                print_result(False, "400 but no error field")
+                return False
+        else:
+            print_result(False, f"Expected 400, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 44: POST /api/articles/:id/retry - Non-existent article
+def test_article_retry_not_found():
+    print_test("POST /api/articles/:id/retry - Non-existent article should return 400")
+    try:
+        resp = session.post(f"{API_BASE}/articles/invalid-article-id-12345/retry")
+        print_response(resp)
+        
+        if resp.status_code == 400:
+            print_result(True, "Non-existent article correctly returns 400")
+            return True
+        else:
+            print_result(False, f"Expected 400, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
+
+# Test 45: POST /api/articles/:id/retry - Queued article
+def test_article_retry_queued():
+    print_test("POST /api/articles/:id/retry - Queued article should return 400")
+    try:
+        # Create a test article (will be queued)
+        gen_resp = session.post(f"{API_BASE}/generate", json={
+            "primaryKeyword": "test retry queued"
+        })
+        if gen_resp.status_code != 200:
+            print_result(False, "Failed to create test article")
+            return False
+        
+        article_id = gen_resp.json()["id"]
+        time.sleep(0.5)
+        
+        resp = session.post(f"{API_BASE}/articles/{article_id}/retry")
+        print_response(resp)
+        
+        if resp.status_code == 400:
+            print_result(True, "Queued article correctly returns 400")
+            return True
+        else:
+            print_result(False, f"Expected 400, got {resp.status_code}")
+            return False
+    except Exception as e:
+        print_result(False, f"Exception: {e}")
+        return False
 
 def main():
     print("\n" + "="*80)
-    print("SEOForge AI Backend API Tests")
+    print("SEOForge AI Backend API Tests (v1 + v2)")
     print("="*80)
     
     results = []
     
-    # Run all tests in order
-    results.append(("Signup", test_signup()))
-    results.append(("Duplicate signup", test_duplicate_signup()))
-    results.append(("Short password", test_short_password()))
-    results.append(("NextAuth login", test_nextauth_login()))
-    results.append(("GET /api/me with auth", test_me_with_auth()))
-    results.append(("GET /api/me without auth", test_me_without_auth()))
-    results.append(("Dashboard stats", test_dashboard_stats()))
-    results.append(("SERP analyze", test_serp_analyze()))
-    results.append(("SERP analyze no keyword", test_serp_analyze_no_keyword()))
-    results.append(("Generate article", test_generate_article()))
-    results.append(("Generate no keyword", test_generate_no_keyword()))
-    results.append(("Bulk job", test_bulk_job()))
-    results.append(("Bulk empty rows", test_bulk_empty_rows()))
-    results.append(("List articles", test_list_articles()))
-    results.append(("List articles with filters", test_list_articles_with_filters()))
-    results.append(("Get article", test_get_article()))
-    results.append(("Get article not found", test_get_article_not_found()))
-    results.append(("Update article", test_update_article()))
-    results.append(("Export article", test_export_article()))
-    results.append(("Export not found", test_export_not_found()))
-    results.append(("Delete article", test_delete_article()))
-    results.append(("List jobs", test_list_jobs()))
-    results.append(("Get job", test_get_job()))
-    results.append(("Get job not found", test_get_job_not_found()))
+    # v1 tests
+    print("\n" + "="*80)
+    print("v1 TESTS (Sanity Check)")
+    print("="*80)
+    results.append(("v1: Signup", test_signup()))
+    results.append(("v1: Duplicate signup", test_duplicate_signup()))
+    results.append(("v1: Short password", test_short_password()))
+    results.append(("v1: NextAuth login", test_nextauth_login()))
+    results.append(("v1: GET /api/me with auth", test_me_with_auth()))
+    results.append(("v1: GET /api/me without auth", test_me_without_auth()))
+    results.append(("v1: Dashboard stats", test_dashboard_stats()))
+    results.append(("v1: SERP analyze", test_serp_analyze()))
+    results.append(("v1: SERP analyze no keyword", test_serp_analyze_no_keyword()))
+    results.append(("v1: Generate article", test_generate_article()))
+    results.append(("v1: Generate no keyword", test_generate_no_keyword()))
+    results.append(("v1: Bulk job", test_bulk_job()))
+    results.append(("v1: Bulk empty rows", test_bulk_empty_rows()))
+    results.append(("v1: List articles", test_list_articles()))
+    results.append(("v1: List articles with filters", test_list_articles_with_filters()))
+    results.append(("v1: Get article", test_get_article()))
+    results.append(("v1: Get article not found", test_get_article_not_found()))
+    results.append(("v1: Update article", test_update_article()))
+    results.append(("v1: Export article", test_export_article()))
+    results.append(("v1: Export not found", test_export_not_found()))
+    results.append(("v1: Delete article", test_delete_article()))
+    results.append(("v1: List jobs", test_list_jobs()))
+    results.append(("v1: Get job", test_get_job()))
+    results.append(("v1: Get job not found", test_get_job_not_found()))
+    
+    # v2 tests
+    print("\n" + "="*80)
+    print("v2 TESTS (New Features)")
+    print("="*80)
+    results.append(("v2: Create project", test_create_project()))
+    results.append(("v2: Create project no name", test_create_project_no_name()))
+    results.append(("v2: List projects", test_list_projects()))
+    results.append(("v2: Get project", test_get_project()))
+    results.append(("v2: Update project", test_update_project()))
+    results.append(("v2: Generate with projectId", test_generate_with_project()))
+    results.append(("v2: Bulk with projectId", test_bulk_with_project()))
+    results.append(("v2: Articles filter by project", test_articles_filter_by_project()))
+    results.append(("v2: Articles filter no project", test_articles_filter_no_project()))
+    results.append(("v2: Articles group by website", test_articles_group_by_website()))
+    results.append(("v2: Job pause", test_job_pause()))
+    results.append(("v2: Job resume", test_job_resume()))
+    results.append(("v2: Job retry-failed", test_job_retry_failed()))
+    results.append(("v2: Job export no completed", test_job_export_no_completed()))
+    results.append(("v2: Job export not found", test_job_export_not_found()))
+    results.append(("v2: Article rewrite invalid target", test_article_rewrite_invalid_target()))
+    results.append(("v2: Article rewrite not found", test_article_rewrite_not_found()))
+    results.append(("v2: Article rewrite no OPENAI key", test_article_rewrite_no_openai_key()))
+    results.append(("v2: Article rewrite no content", test_article_rewrite_no_content()))
+    results.append(("v2: Article retry not found", test_article_retry_not_found()))
+    results.append(("v2: Article retry queued", test_article_retry_queued()))
     
     # Summary
     print("\n" + "="*80)

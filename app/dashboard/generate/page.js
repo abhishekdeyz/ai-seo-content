@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import { useDropzone } from 'react-dropzone'
@@ -37,6 +37,8 @@ const TYPES = ['blog post', 'product review', 'comparison', 'listicle', 'how-to 
 export default function GeneratePage() {
   const router = useRouter()
   const [tab, setTab] = useState('single')
+  const [projects, setProjects] = useState([])
+  useEffect(() => { fetch('/api/projects').then(r => r.ok && r.json()).then(d => setProjects(d || [])) }, [])
 
   return (
     <div className="p-6 md:p-10 max-w-6xl mx-auto">
@@ -49,20 +51,20 @@ export default function GeneratePage() {
           <TabsTrigger value="single"><Sparkles className="h-4 w-4 mr-2" /> Single article</TabsTrigger>
           <TabsTrigger value="bulk"><Upload className="h-4 w-4 mr-2" /> Bulk CSV (50-500)</TabsTrigger>
         </TabsList>
-        <TabsContent value="single"><SingleForm /></TabsContent>
-        <TabsContent value="bulk"><BulkForm /></TabsContent>
+        <TabsContent value="single"><SingleForm projects={projects} /></TabsContent>
+        <TabsContent value="bulk"><BulkForm projects={projects} /></TabsContent>
       </Tabs>
     </div>
   )
 }
 
-function SingleForm() {
+function SingleForm({ projects }) {
   const router = useRouter()
   const [form, setForm] = useState({
     websiteUrl: '', primaryKeyword: '', secondaryKeywords: '',
     country: 'us', language: 'en', tone: 'professional', articleType: 'blog post',
     wordCount: 1500, includeFaqs: true, includeMeta: true, includeSchema: true, humanize: true,
-    avoidBrands: '',
+    avoidBrands: '', projectId: '',
   })
   const [serp, setSerp] = useState(null)
   const [serpLoading, setSerpLoading] = useState(false)
@@ -91,6 +93,7 @@ function SingleForm() {
     try {
       const body = {
         ...form,
+        projectId: form.projectId || null,
         secondaryKeywords: form.secondaryKeywords.split(',').map(s => s.trim()).filter(Boolean),
         avoidBrands: form.avoidBrands.split(',').map(s => s.trim()).filter(Boolean),
       }
@@ -107,6 +110,18 @@ function SingleForm() {
       <div className="lg:col-span-2 space-y-6">
         <Card className="p-6 space-y-4">
           <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">Target</h3>
+          {projects && projects.length > 0 && (
+            <div className="space-y-2">
+              <Label>Project (optional)</Label>
+              <Select value={form.projectId || 'none'} onValueChange={v => upd('projectId', v === 'none' ? '' : v)}>
+                <SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No project</SelectItem>
+                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Website URL (optional)</Label>
@@ -200,10 +215,11 @@ function SerpView({ data }) {
   )
 }
 
-function BulkForm() {
+function BulkForm({ projects }) {
   const router = useRouter()
   const [rows, setRows] = useState([])
   const [name, setName] = useState('')
+  const [projectId, setProjectId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [defaults, setDefaults] = useState({ country: 'us', language: 'en', tone: 'professional', articleType: 'blog post', wordCount: 1500, includeFaqs: true, includeMeta: true, includeSchema: true, humanize: true })
 
@@ -238,7 +254,7 @@ function BulkForm() {
     if (!rows.length) return toast.error('Add at least one row')
     setSubmitting(true)
     try {
-      const res = await fetch('/api/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, rows, defaults }) })
+      const res = await fetch('/api/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, rows, defaults, projectId: projectId || null }) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Bulk submission failed')
       toast.success(`Queued ${data.totalArticles} articles`)
@@ -286,6 +302,18 @@ function BulkForm() {
           <Label>Job name</Label>
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Client X — May launch batch" />
         </div>
+        {projects && projects.length > 0 && (
+          <div className="space-y-2">
+            <Label>Project (optional)</Label>
+            <Select value={projectId || 'none'} onValueChange={v => setProjectId(v === 'none' ? '' : v)}>
+              <SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No project</SelectItem>
+                {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </Card>
 
       {rows.length > 0 && (

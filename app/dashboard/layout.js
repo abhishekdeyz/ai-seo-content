@@ -3,7 +3,7 @@ import { useSession, signOut } from 'next-auth/react'
 import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Sparkles, LayoutDashboard, Plus, History, LogOut, FileText, Sun, Moon } from 'lucide-react'
+import { Sparkles, LayoutDashboard, Plus, History, LogOut, FileText, Sun, Moon, Folder } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTheme } from 'next-themes'
 
@@ -12,6 +12,7 @@ const NAV = [
   { href: '/dashboard/generate', label: 'New generation', icon: Plus },
   { href: '/dashboard/history', label: 'History', icon: History },
   { href: '/dashboard/jobs', label: 'Bulk jobs', icon: FileText },
+  { href: '/dashboard/projects', label: 'Projects', icon: Folder },
 ]
 
 export default function DashboardLayout({ children }) {
